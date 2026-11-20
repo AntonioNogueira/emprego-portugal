@@ -24,14 +24,16 @@ interface Props {
   flyTo: { level: Level; id: string; n: number } | null;
   onSelect: (s: { level: Level; id: string } | null) => void;
   onLevel: (l: Level) => void;
+  /** Values of the areas on screen, for a colour scale fitted to the current view. */
+  onVisible?: (level: Level, values: number[]) => void;
 }
 
-export default function Map({ data, metric, format, breaks, selected, flyTo, onSelect, onLevel }: Props) {
+export default function Map({ data, metric, format, breaks, selected, flyTo, onSelect, onLevel, onVisible }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const ready = useRef(false);
-  const latest = useRef({ metric, format, breaks, onSelect, onLevel });
-  latest.current = { metric, format, breaks, onSelect, onLevel };
+  const latest = useRef({ onVisible, metric, format, breaks, onSelect, onLevel });
+  latest.current = { onVisible, metric, format, breaks, onSelect, onLevel };
 
   useEffect(() => {
     const m = new maplibregl.Map({
@@ -84,6 +86,7 @@ export default function Map({ data, metric, format, breaks, selected, flyTo, onS
       }
       ready.current = true;
       onLevel(levelForZoom(m.getZoom()));
+      m.fire('moveend');
     });
 
     const hit = (e: MapLayerMouseEvent | maplibregl.MapMouseEvent) => {
@@ -114,6 +117,19 @@ export default function Map({ data, metric, format, breaks, selected, flyTo, onS
       latest.current.onSelect(h ? { level: h.level, id: h.props.id } : null);
     });
     m.on('zoomend', () => latest.current.onLevel(levelForZoom(m.getZoom())));
+    m.on('moveend', () => {
+      if (!ready.current || !latest.current.onVisible) return;
+      const level = levelForZoom(m.getZoom());
+      const k = latest.current.metric;
+      const seen = new Set<string>();
+      const values: number[] = [];
+      for (const f of m.queryRenderedFeatures({ layers: [`area-${level}`] })) {
+        const id = f.properties?.id as string;
+        const v = f.properties?.[k];
+        if (!seen.has(id) && typeof v === 'number') { seen.add(id); values.push(v); }
+      }
+      latest.current.onVisible(level, values);
+    });
 
     return () => { popup.remove(); m.remove(); map.current = null; ready.current = false; };
   }, []);
@@ -125,6 +141,12 @@ export default function Map({ data, metric, format, breaks, selected, flyTo, onS
     for (const level of LEVELS) m.setPaintProperty(`area-${level}`, 'fill-color', fillExpression(metric, breaks[level]) as never);
     m.setFilter('area-freguesia', ['has', metric]);
   }, [metric, breaks]);
+
+  // New values on the map (another indicator or filter): report what is on screen again.
+  useEffect(() => {
+    const m = map.current;
+    if (m && ready.current) m.once('idle', () => m.fire('moveend'));
+  }, [data, metric]);
 
   useEffect(() => {
     const m = map.current;
