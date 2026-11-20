@@ -1,5 +1,7 @@
 # Emprego Portugal
 
+![Mapa](docs/screenshot.png)
+
 Quem trabalha no interior agrícola de Portugal: **de onde vêm os residentes estrangeiros** de cada concelho e freguesia.
 
 Mapa coroplético (MapLibre) com dados oficiais do INE. O nível muda com o zoom:
