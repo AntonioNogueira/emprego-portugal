@@ -4,6 +4,7 @@ import { Info, Sprout, X } from 'lucide-react';
 import Map from './components/Map';
 import Legend from './components/Legend';
 import Origins from './components/Origins';
+import { MigrationProjection, RequestsHistory } from './components/Trends';
 import { colorStops } from './lib/colors';
 import { FEATURED_COUNTRIES, LEVEL_LABEL, METRICS, fmtInt, fmtPct, metricByKey, type AreaProps, type Counts, type Level, type Meta } from './lib/metrics';
 
@@ -80,6 +81,8 @@ export default function App() {
     const add = (k: 'o21' | 'pc' | 'p23') => kids.reduce((acc: Counts, c) => { for (const [x, v] of Object.entries(c[k] ?? {})) acc[x] = (acc[x] ?? 0) + v; return acc; }, {});
     const g: AreaProps = { id: 'grupo', name: 'Concelhos agrícolas e de baixa densidade', est21: sum('est21'), pop21: sum('pop21'), res23: sum('res23'), populacao: sum('populacao'),
       empregados: sum('empregados'), primario: sum('primario'), pedidos: sum('pedidos'), o21: add('o21'), pc: add('pc'), p23: add('p23') };
+    const ph = kids.filter(c => c.ph).map(c => c.ph!);
+    if (ph.length) g.ph = ph[0].map((yr, yi) => yr.map((_, k) => ph.reduce((a, c) => a + c[yi][k], 0)));
     return { n: kids.length, area: g };
   }, [raw, filterOn, inFilter]);
 
@@ -158,6 +161,9 @@ export default function App() {
               </div>
               <Kpis area={sel} meta={meta} />
               <div className="mt-4"><Origins area={sel} meta={meta} /></div>
+              <div className="mt-4"><RequestsHistory area={selected.level === 'freguesia' ? byId.concelho[sel.parent as string] ?? sel : sel} meta={meta} /></div>
+              {selected.level === 'freguesia' && <p className="text-[11px] text-[var(--ink-3)]">Série do concelho (não há pedidos por freguesia).</p>}
+              <div className="mt-4"><MigrationProjection region={(selected.level === 'freguesia' ? byId.concelho[sel.parent as string]?.nuts2 : sel.nuts2) ?? 'PT'} meta={meta} /></div>
             </section>
           )}
 
@@ -167,6 +173,7 @@ export default function App() {
               <p className="text-[11px] text-[var(--ink-3)]">Setor primário ≥ {minPrimario} % · densidade ≤ {maxDensidade} hab/km² · somados</p>
               <Kpis area={group.area} meta={meta} />
               <div className="mt-4"><Origins area={group.area} meta={meta} /></div>
+              <div className="mt-4"><RequestsHistory area={group.area} meta={meta} /></div>
             </section>
           )}
 
@@ -175,6 +182,8 @@ export default function App() {
               <h2 className="text-base font-semibold">Portugal</h2>
               <Kpis area={nat} meta={meta} />
               <div className="mt-4"><Origins area={nat} meta={meta} compare={false} /></div>
+              <div className="mt-4"><RequestsHistory area={nat} meta={meta} /></div>
+              <div className="mt-4"><MigrationProjection region="PT" meta={meta} /></div>
             </section>
           )}
 

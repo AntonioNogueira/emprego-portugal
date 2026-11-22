@@ -1,7 +1,7 @@
 // Builds public/data/*.geojson: boundaries (distrito → concelho → freguesia) joined with INE data on
 // foreign residents, their nationalities, the weight of agriculture in employment and earnings by nationality.
 // Run: npm run data   (downloads into .cache/, delete it to refresh)
-import { rows, caopCode, num, index } from './lib/ine.mjs';
+import { rows, allPeriods, caopCode, num, index } from './lib/ine.mjs';
 import { boundaries, write } from './lib/geo.mjs';
 
 console.log('INE indicators');
@@ -12,6 +12,8 @@ const employment = await rows('0014636');                                // Cens
 const population = await rows('0012918', { period: 'S7A2023' });         // estimativas de população residente
 const density = await rows('0013189', { period: 'S7A2023' });
 const earnings = await rows('0013010', { period: 'S7A2024' });           // ganho mensal × nacionalidade × quartis (Quadros de Pessoal)
+const requestsHistory = await allPeriods('0008627', { Dim3: 'T' });      // pedidos de estatuto de residente 2008–2023 × nacionalidade
+const projection = await allPeriods('0014555');                         // projeções do saldo migratório 2025–2100 × NUTS II × cenário
 
 // Census nationality codes that are aggregates, not countries.
 const CENSUS_AGGREGATES = new Set(['T', 'PT', 'EST', '1', '2', '3', '4', '5', '1XG']);
@@ -44,6 +46,33 @@ const pop = index(population.rows, r => r.dim_3_t === 'HM' && r.dim_4_t === 'Tot
 const dens = index(density.rows);
 const earn = bucket(earnings.rows, r => r.dim_4_t === '2.º quartil', r => r.dim_3_t);
 
+// Requests per year and continent: [total, Europa, África, América, Ásia, Oceânia] for each year.
+const HIST_KEYS = ['T', '1', '2', '3', '4', '5'];
+const HIST_YEARS = Object.keys(requestsHistory);
+const hist = new Map(); // DTMN or 'PT' → number[][]
+HIST_YEARS.forEach((year, yi) => {
+  for (const r of requestsHistory[year]) {
+    const k = HIST_KEYS.indexOf(r.dim_4);
+    if (k < 0) continue;
+    const id = r.geocod === 'PT' ? 'PT' : r.geocod.length === 7 ? r.geocod.slice(3) : null;
+    if (!id) continue;
+    if (!hist.has(id)) hist.set(id, HIST_YEARS.map(() => HIST_KEYS.map(() => 0)));
+    hist.get(id)[yi][k] = num(r.valor) ?? 0;
+  }
+});
+
+// NUTS II (2024) of each concelho, to show its region's migration projection.
+const nuts2 = new Map(residents.rows.filter(r => r.geocod.length === 7).map(r => [r.geocod.slice(3), r.geocod.slice(0, 2)]));
+const PROJ_YEARS = Object.keys(projection).filter(y => +y <= 2050);
+const proj = {};
+PROJ_YEARS.forEach((year, yi) => {
+  for (const r of projection[year]) {
+    if (r.dim_3_t === 'Sem migrações') continue; // zero by definition
+    proj[r.geocod] ??= { name: r.geodsg };
+    (proj[r.geocod][r.dim_3_t] ??= PROJ_YEARS.map(() => null))[yi] = num(r.valor);
+  }
+});
+
 function fill(p, level) {
   const id = p.id;
   const c21 = census21[level].get(id);
@@ -64,6 +93,8 @@ function fill(p, level) {
     if (q) { p.pedidos = q.T; p.pc = Object.fromEntries(Object.entries(q).filter(([k]) => k !== 'T')); }
     const qc = req.concelho.get(id);
     if (qc) p.p23 = qc;
+    if (hist.has(id)) p.ph = hist.get(id);
+    if (nuts2.has(id)) p.nuts2 = nuts2.get(id);
     const e = earn.concelho.get(id);
     if (e) { p.ganho_pt = e.Portuguesa; p.ganho_extra = e['Estrangeira extra UE (27)']; p.ganho_ue = e['Estrangeira intra UE (27)']; p.ganho = e.Total; }
   }
@@ -93,6 +124,8 @@ function aggregateDistricts(distritos, concelhos) {
       const s = kids.reduce((a, c) => a + (c[k] ?? 0), 0);
       if (s) p[k] = s;
     }
+    const ph = kids.filter(c => c.ph).map(c => c.ph);
+    if (ph.length) p.ph = ph[0].map((year, yi) => year.map((_, k) => ph.reduce((a, c) => a + c[yi][k], 0)));
     for (const k of ['o21', 'n23', 'pc', 'p23']) {
       const s = kids.reduce((a, c) => addObj(a, c[k]), {});
       if (Object.keys(s).length) p[k] = s;
@@ -127,6 +160,7 @@ for (const r of pick(earnings.rows, r => r.dim_4_t === '2.º quartil')) {
   const k = { Portuguesa: 'ganho_pt', 'Estrangeira extra UE (27)': 'ganho_extra', 'Estrangeira intra UE (27)': 'ganho_ue', Total: 'ganho' }[r.dim_3_t];
   if (k) national[k] = num(r.valor);
 }
+national.ph = hist.get('PT');
 national.pct_est21 = round(national.est21 / national.pop21 * 100, 2);
 derive(national);
 
@@ -137,8 +171,11 @@ write('public/data/meta.json', {
   national,
   countries: countryNames,
   continents: CONTINENTS,
-  periods: { censos: census.period, residentes: residents.period, pedidos: requests.period, ganho: earnings.period, populacao: population.period },
-  sources: { censos: '0014632', setor: '0014636', residentes: '0013219', pedidos: '0013193', ganho: '0013010', populacao: '0012918', densidade: '0013189' },
+  histYears: HIST_YEARS.map(Number),
+  projYears: PROJ_YEARS.map(Number),
+  proj,
+  periods: { censos: census.period, residentes: residents.period, pedidos: requests.period, ganho: earnings.period, populacao: population.period, historico: `${HIST_YEARS[0]}–${HIST_YEARS.at(-1)}`, projecao: `${PROJ_YEARS[0]}–${PROJ_YEARS.at(-1)}` },
+  sources: { censos: '0014632', setor: '0014636', residentes: '0013219', pedidos: '0013193', ganho: '0013010', populacao: '0012918', densidade: '0013189', historico: '0008627', projecao: '0014555' },
 });
 const covered = (level, k) => geo[level].features.filter(f => f.properties[k] != null).length + '/' + geo[level].features.length;
 console.log(`Coverage: concelhos %est21 ${covered('concelho', 'pct_est21')}, res23 ${covered('concelho', 'res23')}, freguesias %est21 ${covered('freguesia', 'pct_est21')}, primário ${covered('freguesia', 'pct_primario')}`);

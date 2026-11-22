@@ -39,6 +39,14 @@ export async function rows(varcd, opts = {}) {
   return { period, rows: dados[period], name: json[0].IndicadorDsg };
 }
 
+/** All periods (request with filters { Dim1: 'T' }): { period: rows[] } */
+export async function allPeriods(varcd, filters = {}) {
+  const json = await fetchIndicator(varcd, { filters: { Dim1: 'T', ...filters } });
+  const dados = json[0].Dados;
+  console.log(`  INE ${varcd} · ${Object.keys(dados)[0]}–${Object.keys(dados).at(-1)}`);
+  return dados;
+}
+
 /**
  * INE geographic codes → CAOP codes (DICOFRE):
  *  município: NUTS III (3) + DTMN (4)  e.g. 1120302 → "0302"; Censos use DTMN (4) directly

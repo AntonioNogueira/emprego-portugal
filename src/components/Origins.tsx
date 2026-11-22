@@ -2,7 +2,7 @@ import type { AreaProps, Meta } from '../lib/metrics';
 import { fmtInt, fmtPct } from '../lib/metrics';
 
 // Categorical slots (fixed order) for the five continents; every segment is also labelled in the legend.
-const CONTINENT_COLORS: Record<string, string> = { 1: '#2a78d6', 2: '#eb6834', 3: '#1baf7a', 4: '#eda100', 5: '#e87ba4' };
+export const CONTINENT_COLORS: Record<string, string> = { 1: '#2a78d6', 2: '#eb6834', 3: '#1baf7a', 4: '#eda100', 5: '#e87ba4' };
 
 interface Props {
   area: AreaProps;

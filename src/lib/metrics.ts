@@ -28,6 +28,8 @@ export interface AreaProps {
   ganho_rel?: number;
   top21?: string;
   top21_pct?: number;
+  ph?: number[][];
+  nuts2?: string;
   [key: string]: unknown;
 }
 
@@ -36,6 +38,9 @@ export interface Meta {
   national: AreaProps;
   countries: Record<string, string>;
   continents: Record<string, string>;
+  histYears: number[];
+  projYears: number[];
+  proj: Record<string, { name: string; Baixo?: (number | null)[]; Central?: (number | null)[]; Alto?: (number | null)[] }>;
   periods: Record<string, string>;
   sources: Record<string, string>;
 }
